@@ -1,0 +1,16 @@
+# Hotel Policy Knowledge Base
+[CHECKOUT]
+standard_time: 11:00
+gold_limit: 14:00
+silver_limit: 12:00
+
+[MEMBER_TIERS]
+Gold: late_checkout_until=14:00, auto_approve=true
+Silver: late_checkout_until=12:00, auto_approve=false, subject_to_availability=true
+Regular: late_checkout_until=11:00, auto_approve=false, charge_required=true
+
+[RESPONSE_TEMPLATES]
+success: "✅ Great news, {name}! Your late checkout until {time} is confirmed."
+needs_approval: "⏳ Your request is being reviewed. We will notify you within 15 minutes, {name}!"
+denied: "🙏 Unable to approve at this time. Would you like to explore other options, {name}?"
+error: "🤔 I need more information to help with your request."

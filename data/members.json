@@ -1,0 +1,5 @@
+{
+  "GOLD_001": {"tier": "Gold", "name": "Alex Chen", "stay_count": 12},
+  "SILVER_002": {"tier": "Silver", "name": "Jamie Liu", "stay_count": 3},
+  "NEW_GUEST": {"tier": "Regular", "name": "Guest", "stay_count": 0}
+}
