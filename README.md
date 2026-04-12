@@ -1,6 +1,9 @@
 # A2A Hospitality Concierge (Simple)
 > 100% Open Source - Rule-Based - No LLM/Vector DB - Portfolio Demo
 
+## Demo Screenshot
+![Demo Screenshot](docs/demo-screenshot.png)
+
 ## Quick Start
 1. docker compose up --build -d
 2. open http://localhost:8501
