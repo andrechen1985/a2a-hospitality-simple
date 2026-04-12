@@ -1,4 +1,13 @@
 # A2A Hospitality Concierge (Simple)
+
+[![GitHub license](https://img.shields.io/github/license/andrechen1985/a2a-hospitality-simple)](https://github.com/andrechen1985/a2a-hospitality-simple/blob/main/LICENSE)
+[![GitHub stars](https://img.shields.io/github/stars/andrechen1985/a2a-hospitality-simple?style=social)](https://github.com/andrechen1985/a2a-hospitality-simple/stargazers)
+
+[![GitHub issues](https://img.shields.io/github/issues/andrechen1985/a2a-hospitality-simple)](https://github.com/andrechen1985/a2a-hospitality-simple/issues)
+[![GitHub forks](https://img.shields.io/github/forks/andrechen1985/a2a-hospitality-simple)](https://github.com/andrechen1985/a2a-hospitality-simple/network)
+[![Python](https://img.shields.io/badge/Python-3.11-blue)](https://www.python.org/)
+[![Docker](https://img.shields.io/badge/Docker-Compose-blue?logo=docker)](https://www.docker.com/)
+
 > 100% Open Source - Rule-Based - No LLM/Vector DB - Portfolio Demo
 
 ## Demo Screenshot
