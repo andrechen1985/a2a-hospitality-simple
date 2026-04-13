@@ -6,7 +6,6 @@ services:
     region: oregon
     rootDir: .
     dockerfilePath: ./Dockerfile
-    healthCheckPath: /
     envVars:
       - key: PYTHON_VERSION
         value: "3.11.15"
