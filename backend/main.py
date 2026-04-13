@@ -121,3 +121,7 @@ async def chat(req: ChatRequest):
 @app.get("/health")
 async def health():
     return {"status": "healthy", "agents": ["AgentA", "AgentB"], "logic": "rule-based"}
+
+@app.get("/")
+async def root():
+    return {"status": "ok", "service": "a2a-hospitality-concierge"}
