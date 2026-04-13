@@ -2,7 +2,7 @@ import os
 import streamlit as st
 import requests
 
-BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
+BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8001")
 st.set_page_config(page_title="A2A Concierge", page_icon="robot")
 st.title("AI Hospitality Concierge")
 st.markdown("*100% Open Source - Rule-Based - No External LLM Required*")
