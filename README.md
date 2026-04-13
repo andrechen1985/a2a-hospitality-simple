@@ -2,13 +2,14 @@
 
 [![GitHub license](https://img.shields.io/github/license/andrechen1985/a2a-hospitality-simple)](https://github.com/andrechen1985/a2a-hospitality-simple/blob/main/LICENSE)
 [![GitHub stars](https://img.shields.io/github/stars/andrechen1985/a2a-hospitality-simple?style=social)](https://github.com/andrechen1985/a2a-hospitality-simple/stargazers)
-
-[![GitHub issues](https://img.shields.io/github/issues/andrechen1985/a2a-hospitality-simple)](https://github.com/andrechen1985/a2a-hospitality-simple/issues)
-[![GitHub forks](https://img.shields.io/github/forks/andrechen1985/a2a-hospitality-simple)](https://github.com/andrechen1985/a2a-hospitality-simple/network)
-[![Python](https://img.shields.io/badge/Python-3.11-blue)](https://www.python.org/)
-[![Docker](https://img.shields.io/badge/Docker-Compose-blue?logo=docker)](https://www.docker.com/)
+[![Deployed on Render](https://img.shields.io/badge/Deployed%20on-Render-46E3B7?logo=render)](https://a2a-hospitality-simple.onrender.com)
 
 > 100% Open Source - Rule-Based - No LLM/Vector DB - Portfolio Demo
+
+## 🌐 Live Demo
+**https://a2a-hospitality-simple.onrender.com**
+
+> ⚠️ 免費層級有休眠機制，首次訪問需等待 30-50 秒喚醒，屬正常現象。
 
 ## Demo Screenshot
 ![Demo Screenshot](docs/demo-screenshot.png)
