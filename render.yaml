@@ -16,3 +16,4 @@ services:
         value: "0.0.0.0"
       - key: BACKEND_URL
         value: "http://localhost:8000"
+    dockerCommand: "/start.sh"
