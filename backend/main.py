@@ -174,11 +174,13 @@ def agent_b_process(request: A2ARequest) -> A2AResponse:
 
 def parse_intent(message: str, member_id: str) -> A2ARequest:
     msg = message.lower()
-    if any(kw in msg for kw in ["late checkout", "check out late", "2pm", "14:00"]):
+    # 檢測延遲退房 (支持中英文)
+    if any(kw in msg for kw in ["late checkout", "check out late", "2pm", "14:00", "下午", "晚點退房", "延遲退房", "晚退房"]):
         intent = "late_checkout"
-        time_match = re.search(r'(\d{1,2}:\d{2})', msg)
+        time_match = re.search(r'(\d{1,2}:\d{2})', message)
         requested_time = time_match.group(1) if time_match else "14:00"
-    elif "early checkin" in msg:
+    # 檢測提早入住 (支持中英文)
+    elif any(kw in msg for kw in ["early checkin", "early check-in", "提早入住", "提前入住"]):
         intent = "early_checkin"
         requested_time = "12:00"
     else:
