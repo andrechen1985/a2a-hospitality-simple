@@ -2,6 +2,8 @@ import os
 import json
 import re
 import uuid
+import random
+from datetime import datetime
 from typing import Literal, Optional
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -24,6 +26,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# 對話歷史儲存（記憶體中，生產環境建議使用 Redis）
+conversation_history: dict[str, list[dict]] = {}
+
+
 def load_policy() -> dict:
     policy = {}
     current_section = None
@@ -37,12 +43,19 @@ def load_policy() -> dict:
                 policy[current_section] = {}
             elif ":" in line and current_section:
                 key, value = line.split(":", 1)
-                policy[current_section][key.strip()] = value.strip()
+                # 處理多行模板（使用 | 分隔多個變體）
+                if key.strip().endswith("_variants"):
+                    variants = [v.strip() for v in value.split("|")]
+                    policy[current_section][key.strip()] = variants
+                else:
+                    policy[current_section][key.strip()] = value.strip()
     return policy
+
 
 def load_members() -> dict:
     with open(DATA_DIR / "members.json", "r") as f:
         return json.load(f)
+
 
 POLICY = load_policy()
 MEMBERS = load_members()
@@ -55,6 +68,7 @@ class A2ARequest(BaseModel):
     member_id: str
     requested_time: Optional[str] = None
 
+
 class A2AResponse(BaseModel):
     message_id: str
     status: Literal["success", "needs_approval", "denied", "error"]
@@ -62,21 +76,79 @@ class A2AResponse(BaseModel):
     reason: str
     template_key: str = "error"
 
+
+def get_time_greeting() -> str:
+    """根據當前時段返回問候語"""
+    hour = datetime.now().hour
+    if 5 <= hour < 12:
+        return "早上好"
+    elif 12 <= hour < 14:
+        return "午安"
+    elif 14 <= hour < 18:
+        return "下午好"
+    elif 18 <= hour < 22:
+        return "晚上好"
+    else:
+        return "夜深了"
+
+
+def get_personalized_tone(tier: str, stay_count: int) -> str:
+    """根據會員等級和停留次數調整語氣"""
+    if tier == "Gold" and stay_count >= 10:
+        return "vip"
+    elif tier == "Gold":
+        return "friendly"
+    elif tier == "Silver":
+        return "warm"
+    else:
+        return "standard"
+
+
+def select_template_variants(template_key: str, tone: str) -> str:
+    """從多個變體中選擇一個模板，考慮語氣和隨機性"""
+    variants_key = f"{template_key}_variants"
+    
+    # 如果有定義變體，從中選擇
+    if variants_key in POLICY.get("RESPONSE_TEMPLATES", {}):
+        variants = POLICY["RESPONSE_TEMPLATES"][variants_key]
+        # 根據語氣過濾或直接隨機選擇
+        return random.choice(variants)
+    
+    # 回退到單一模板
+    templates = POLICY.get("RESPONSE_TEMPLATES", {})
+    return templates.get(template_key, templates.get("error", "抱歉，我無法處理您的請求。"))
+
+
 def agent_b_process(request: A2ARequest) -> A2AResponse:
     member = MEMBERS.get(request.member_id)
     if not member:
         return A2AResponse(message_id=request.message_id, status="error", reason="Member not found", template_key="error")
+    
     tier = member["tier"]
+    stay_count = member.get("stay_count", 0)
     requested = request.requested_time or "14:00"
+    
     if request.intent == "late_checkout":
         tier_policy = POLICY["MEMBER_TIERS"].get(tier, "")
         rules = dict(item.strip().split("=") for item in tier_policy.split(",") if "=" in item)
         limit_time = rules.get("late_checkout_until", "11:00")
         auto_approve = rules.get("auto_approve", "false").lower() == "true"
+        
         if requested <= limit_time:
             status_key = "success" if auto_approve else "needs_approval"
-            return A2AResponse(message_id=request.message_id, status=status_key, checkout_time=requested, reason=f"{tier} tier limit: {limit_time}", template_key=status_key)
-        return A2AResponse(message_id=request.message_id, status="denied", reason=f"Exceeds {tier} limit ({limit_time})", template_key="denied")
+            return A2AResponse(
+                message_id=request.message_id, 
+                status=status_key, 
+                checkout_time=requested, 
+                reason=f"{tier} tier limit: {limit_time}", 
+                template_key=status_key,
+            )
+        return A2AResponse(
+            message_id=request.message_id, 
+            status="denied", 
+            reason=f"Exceeds {tier} limit ({limit_time})", 
+            template_key="denied"
+        )
     return A2AResponse(message_id=request.message_id, status="error", reason="Unsupported intent", template_key="error")
 
 def parse_intent(message: str, member_id: str) -> A2ARequest:
@@ -93,10 +165,76 @@ def parse_intent(message: str, member_id: str) -> A2ARequest:
         requested_time = None
     return A2ARequest(sender="AgentA", receiver="AgentB", intent=intent, member_id=member_id, requested_time=requested_time)
 
-def format_guest_response(a2a_resp: A2AResponse, member_name: str) -> str:
-    templates = POLICY["RESPONSE_TEMPLATES"]
-    template = templates.get(a2a_resp.template_key, templates["error"])
-    return template.format(name=member_name, time=a2a_resp.checkout_time or "", reason=a2a_resp.reason)
+
+def format_guest_response(a2a_resp: A2AResponse, member_name: str, member_tier: str, stay_count: int, conversation_context: Optional[dict] = None) -> str:
+    """
+    格式化回應，整合：
+    1. 時段問候語
+    2. 個性化語氣
+    3. 多樣化模板變體
+    4. 對話歷史上下文
+    """
+    # 獲取時段問候
+    greeting = get_time_greeting()
+    
+    # 獲取個性化語氣
+    tone = get_personalized_tone(member_tier, stay_count)
+    
+    # 選擇模板（支持多變體）
+    template = select_template_variants(a2a_resp.template_key, tone)
+    
+    # 根據語氣添加前綴或後綴
+    tone_prefix = ""
+    tone_suffix = ""
+    
+    if tone == "vip":
+        prefixes = ["尊敬的", "珍貴的 VIP 會員", "我們最尊貴的"]
+        tone_prefix = f"{random.choice(prefixes)}{member_name}，{greeting}！"
+        suffixes = ["感謝您一直以來的支持！", "期待繼續為您提供優質服務！", "您的滿意是我們最大的動力！"]
+        tone_suffix = random.choice(suffixes)
+    elif tone == "friendly":
+        prefixes = ["嗨", "哈囉", "親愛的"]
+        tone_prefix = f"{random.choice(prefixes)} {member_name}，{greeting}！"
+    elif tone == "warm":
+        prefixes = ["您好", "歡迎", "感謝光臨"]
+        tone_prefix = f"{random.choice(prefixes)}，{member_name}，{greeting}！"
+    else:
+        tone_prefix = f"{member_name} 您好，{greeting}！"
+    
+    # 格式化主要訊息
+    main_message = template.format(name=member_name, time=a2a_resp.checkout_time or "", reason=a2a_resp.reason)
+    
+    # 組合完整回應
+    if tone_suffix:
+        return f"{tone_prefix}\n\n{main_message}\n\n{tone_suffix}"
+    else:
+        return f"{tone_prefix}\n\n{main_message}"
+
+
+# 對話歷史管理函數
+def update_conversation_history(member_id: str, user_message: str, bot_response: str, intent: str, status: str):
+    """更新對話歷史"""
+    if member_id not in conversation_history:
+        conversation_history[member_id] = []
+    
+    # 限制歷史記錄數量（最多 10 條）
+    if len(conversation_history[member_id]) >= 10:
+        conversation_history[member_id].pop(0)
+    
+    conversation_history[member_id].append({
+        "timestamp": datetime.now().isoformat(),
+        "user_message": user_message,
+        "bot_response": bot_response,
+        "intent": intent,
+        "status": status
+    })
+
+
+def get_conversation_context(member_id: str) -> Optional[dict]:
+    """獲取最近的對話上下文"""
+    if member_id in conversation_history and conversation_history[member_id]:
+        return conversation_history[member_id][-1]
+    return None
 
 class ChatRequest(BaseModel):
     user_message: str
@@ -106,16 +244,46 @@ class ChatRequest(BaseModel):
 class ChatResponse(BaseModel):
     response: str
     trace: Optional[dict] = None
+    conversation_context: Optional[dict] = None
 
 @app.post("/chat")
 async def chat(req: ChatRequest):
+    # 獲取會員資訊
+    member = MEMBERS.get(req.member_id, {})
+    member_name = member.get("name", "Guest")
+    member_tier = member.get("tier", "Regular")
+    stay_count = member.get("stay_count", 0)
+    
+    # 獲取對話上下文
+    context = get_conversation_context(req.member_id)
+    
+    # 處理請求
     a2a_req = parse_intent(req.user_message, req.member_id)
     a2a_resp = agent_b_process(a2a_req)
-    member_name = MEMBERS.get(req.member_id, {}).get("name", "Guest")
-    guest_msg = format_guest_response(a2a_resp, member_name)
+    
+    # 生成個性化回應
+    guest_msg = format_guest_response(a2a_resp, member_name, member_tier, stay_count, context)
+    
+    # 更新對話歷史
+    update_conversation_history(
+        member_id=req.member_id,
+        user_message=req.user_message,
+        bot_response=guest_msg,
+        intent=a2a_req.intent,
+        status=a2a_resp.status
+    )
+    
     result = {"response": guest_msg}
     if req.show_trace:
-        result["trace"] = {"a2a_request": a2a_req.model_dump(), "a2a_response": a2a_resp.model_dump()}
+        result["trace"] = {
+            "a2a_request": a2a_req.model_dump(), 
+            "a2a_response": a2a_resp.model_dump(),
+            "member_info": {"name": member_name, "tier": member_tier, "stay_count": stay_count},
+            "tone": get_personalized_tone(member_tier, stay_count),
+            "greeting_time": get_time_greeting()
+        }
+        result["conversation_context"] = context
+    
     return ChatResponse(**result)
 
 @app.get("/health")
