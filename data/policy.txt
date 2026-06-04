@@ -11,6 +11,10 @@ Regular: late_checkout_until=11:00, auto_approve=false, charge_required=true
 
 [RESPONSE_TEMPLATES]
 success: "✅ Great news, {name}! Your late checkout until {time} is confirmed."
+success_variants: "✅ 太好了，{name}！您的延遲退房已確認至 {time}。|🎉 好消息，{name}！您可以延遲到 {time} 退房。|✨ 已完成，{name}！您的退房時間已延長至 {time}。|👍 沒問題，{name}！我們已為您安排 {time} 退房。"
 needs_approval: "⏳ Your request is being reviewed. We will notify you within 15 minutes, {name}!"
+needs_approval_variants: "⏳ {name}，您的申請正在審核中，我們將在 15 分鐘內通知您。|📋 {name}，我們正在確認您的請求，請稍候片刻。|🔍 {name}，正在處理您的申請，很快會給您回覆。|⏰ {name}，請等待一下，我們正在核對您的要求。"
 denied: "🙏 Unable to approve at this time. Would you like to explore other options, {name}?"
+denied_variants: 🙏 真的很抱歉，{name}，因為前一天滿房的關係，還是我們可以先幫您寄存行李。|😔 真的很不好意思，{name}，由於客房已滿，我們可以協助您寄存行李。|💬 真的很抱歉，{name}，因為房間已安排給其他客人，不如先讓我們幫您保管行李。|🤝 真的很不好意思，{name}，基於滿房狀況，我們很樂意先為您寄存行李。
 error: "🤔 I need more information to help with your request."
+error_variants: "🤔 {name}，我需要更多資訊才能協助您。|❓ {name}，能否提供更多細節讓我更好地幫助您？|🧐 {name}，請再說明一下您的需求。|💭 {name}，我不太確定您的意思，可以再詳細說明嗎？"
