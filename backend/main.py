@@ -31,6 +31,8 @@ conversation_history: dict[str, list[dict]] = {}
 
 
 def load_policy() -> dict:
+    """載入政策文件，支持多語言模板變體"""
+    import re
     policy = {}
     current_section = None
     with open(DATA_DIR / "policy.txt", "r") as f:
@@ -43,12 +45,16 @@ def load_policy() -> dict:
                 policy[current_section] = {}
             elif ":" in line and current_section:
                 key, value = line.split(":", 1)
-                # 處理多行模板（使用 | 分隔多個變體）
-                if key.strip().endswith("_variants"):
-                    variants = [v.strip() for v in value.split("|")]
-                    policy[current_section][key.strip()] = variants
+                key = key.strip()
+                value = value.strip()
+                # 處理多行模板（使用 | 分隔多個變體，每個變體以 emoji 開頭）
+                if "_variants_" in key:
+                    # 使用正則表達式在 emoji 之間的 | 處分割
+                    variants = re.split(r'\s*\|\s*(?=[🎉✅⏳📋🔍⏰🙏😔💬🤝✨👍🤔❓🧐💭])', value)
+                    variants = [v.strip() for v in variants if v.strip()]
+                    policy[current_section][key] = variants
                 else:
-                    policy[current_section][key.strip()] = value.strip()
+                    policy[current_section][key] = value
     return policy
 
 
@@ -104,9 +110,19 @@ def get_personalized_tone(tier: str, stay_count: int) -> str:
         return "standard"
 
 
-def select_template_variants(template_key: str, tone: str) -> str:
-    """從多個變體中選擇一個模板，考慮語氣和隨機性"""
-    variants_key = f"{template_key}_variants"
+def detect_language(message: str) -> str:
+    """檢測用戶訊息的語言 (中文或英文)"""
+    # 簡單的中文檢測：如果包含中文字符則視為中文
+    chinese_chars = re.findall(r'[\u4e00-\u9fff]', message)
+    if len(chinese_chars) > 0:
+        return "zh"
+    return "en"
+
+
+def select_template_variants(template_key: str, tone: str, language: str = "zh") -> str:
+    """從多個變體中選擇一個模板，考慮語氣、語言和隨機性"""
+    # 根據語言選擇對應的變體 key
+    variants_key = f"{template_key}_variants_{language}"
     
     # 如果有定義變體，從中選擇
     if variants_key in POLICY.get("RESPONSE_TEMPLATES", {}):
@@ -114,9 +130,14 @@ def select_template_variants(template_key: str, tone: str) -> str:
         # 根據語氣過濾或直接隨機選擇
         return random.choice(variants)
     
-    # 回退到單一模板
+    # 回退到單一模板（優先使用對應語言的預設模板）
     templates = POLICY.get("RESPONSE_TEMPLATES", {})
-    return templates.get(template_key, templates.get("error", "抱歉，我無法處理您的請求。"))
+    lang_template_key = f"{template_key}_{language}"
+    if lang_template_key in templates:
+        return templates[lang_template_key]
+    
+    # 最終回退到通用 error
+    return templates.get("error", "抱歉，我無法處理您的請求。" if language == "zh" else "Sorry, I cannot process your request.")
 
 
 def agent_b_process(request: A2ARequest) -> A2AResponse:
@@ -166,40 +187,71 @@ def parse_intent(message: str, member_id: str) -> A2ARequest:
     return A2ARequest(sender="AgentA", receiver="AgentB", intent=intent, member_id=member_id, requested_time=requested_time)
 
 
-def format_guest_response(a2a_resp: A2AResponse, member_name: str, member_tier: str, stay_count: int, conversation_context: Optional[dict] = None) -> str:
+def format_guest_response(a2a_resp: A2AResponse, member_name: str, member_tier: str, stay_count: int, user_message: str = "", conversation_context: Optional[dict] = None) -> str:
     """
     格式化回應，整合：
     1. 時段問候語
     2. 個性化語氣
-    3. 多樣化模板變體
+    3. 多樣化模板變體 (支持中英文)
     4. 對話歷史上下文
     """
-    # 獲取時段問候
+    # 檢測用戶訊息的語言
+    language = detect_language(user_message)
+    
+    # 獲取時段問候 (根據語言調整)
     greeting = get_time_greeting()
+    if language == "en":
+        hour = datetime.now().hour
+        if 5 <= hour < 12:
+            greeting = "Good morning"
+        elif 12 <= hour < 14:
+            greeting = "Good afternoon"
+        elif 14 <= hour < 18:
+            greeting = "Good afternoon"
+        elif 18 <= hour < 22:
+            greeting = "Good evening"
+        else:
+            greeting = "Good evening"
     
     # 獲取個性化語氣
     tone = get_personalized_tone(member_tier, stay_count)
     
-    # 選擇模板（支持多變體）
-    template = select_template_variants(a2a_resp.template_key, tone)
+    # 選擇模板（支持多變體和多語言）
+    template = select_template_variants(a2a_resp.template_key, tone, language)
     
-    # 根據語氣添加前綴或後綴
+    # 根據語氣和語言添加前綴或後綴
     tone_prefix = ""
     tone_suffix = ""
     
     if tone == "vip":
-        prefixes = ["尊敬的", "珍貴的 VIP 會員", "我們最尊貴的"]
-        tone_prefix = f"{random.choice(prefixes)}{member_name}，{greeting}！"
-        suffixes = ["感謝您一直以來的支持！", "期待繼續為您提供優質服務！", "您的滿意是我們最大的動力！"]
+        if language == "zh":
+            prefixes = ["尊敬的", "珍貴的 VIP 會員", "我們最尊貴的"]
+            suffixes = ["感謝您一直以來的支持！", "期待繼續為您提供優質服務！", "您的滿意是我們最大的動力！"]
+        else:
+            prefixes = ["Dear valued", "Esteemed VIP", "Our most distinguished"]
+            suffixes = ["Thank you for your continued support!", "We look forward to serving you!", "Your satisfaction is our priority!"]
+        tone_prefix = f"{random.choice(prefixes)} {member_name}, {greeting}!"
         tone_suffix = random.choice(suffixes)
     elif tone == "friendly":
-        prefixes = ["嗨", "哈囉", "親愛的"]
-        tone_prefix = f"{random.choice(prefixes)} {member_name}，{greeting}！"
+        if language == "zh":
+            prefixes = ["嗨", "哈囉", "親愛的"]
+        else:
+            prefixes = ["Hi", "Hello", "Dear"]
+        tone_prefix = f"{random.choice(prefixes)} {member_name}, {greeting}!"
     elif tone == "warm":
-        prefixes = ["您好", "歡迎", "感謝光臨"]
-        tone_prefix = f"{random.choice(prefixes)}，{member_name}，{greeting}！"
+        if language == "zh":
+            prefixes = ["您好", "歡迎", "感謝光臨"]
+        else:
+            prefixes = ["Hello", "Welcome", "Thank you for staying with us"]
+        if language == "zh":
+            tone_prefix = f"{random.choice(prefixes)}，{member_name}，{greeting}！"
+        else:
+            tone_prefix = f"{random.choice(prefixes)}, {member_name}. {greeting}!"
     else:
-        tone_prefix = f"{member_name} 您好，{greeting}！"
+        if language == "zh":
+            tone_prefix = f"{member_name} 您好，{greeting}！"
+        else:
+            tone_prefix = f"Hello {member_name}, {greeting}!"
     
     # 格式化主要訊息
     main_message = template.format(name=member_name, time=a2a_resp.checkout_time or "", reason=a2a_resp.reason)
@@ -261,8 +313,8 @@ async def chat(req: ChatRequest):
     a2a_req = parse_intent(req.user_message, req.member_id)
     a2a_resp = agent_b_process(a2a_req)
     
-    # 生成個性化回應
-    guest_msg = format_guest_response(a2a_resp, member_name, member_tier, stay_count, context)
+    # 生成個性化回應 (傳入用戶訊息以檢測語言)
+    guest_msg = format_guest_response(a2a_resp, member_name, member_tier, stay_count, req.user_message, context)
     
     # 更新對話歷史
     update_conversation_history(
