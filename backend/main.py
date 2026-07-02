@@ -151,10 +151,6 @@ def select_template_variants(template_key: str, tone: str, language: str = "zh")
 
 
 def agent_b_process(request: A2ARequest) -> A2AResponse:
-    # 修復漏洞 2: 驗證 member_id 是否為有效格式 (防止任意傳入)
-    if not re.match(r'^[A-Z]+_\d+$', request.member_id):
-        return A2AResponse(message_id=request.message_id, status="error", reason="Invalid member ID format", template_key="error")
-    
     member = MEMBERS.get(request.member_id)
     if not member:
         return A2AResponse(message_id=request.message_id, status="error", reason="Member not found", template_key="error")
