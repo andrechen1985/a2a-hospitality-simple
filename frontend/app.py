@@ -2,7 +2,10 @@ import os
 import streamlit as st
 import requests
 
-BACKEND_URL = os.getenv("BACKEND_URL", "http://127.0.0.1:8001")
+# 修復漏洞 9: 後端 URL 不暴露默認值，強制從環境變量獲取
+BACKEND_URL = os.getenv("BACKEND_URL")
+if not BACKEND_URL:
+    raise ValueError("BACKEND_URL environment variable must be set")
 st.set_page_config(page_title="A2A Concierge", page_icon="robot")
 
 # Bilingual UI labels / 雙語介面標籤
@@ -12,7 +15,7 @@ UI_LABELS = {
                  "zh": "*100% 開源 - 基於規則 - 無需外部 LLM*"},
     "guest_profile": {"en": "Guest Profile", "zh": "客人資料"},
     "member_id": {"en": "Member ID", "zh": "會員 ID"},
-    "show_trace": {"en": "Show A2A Protocol Trace", "zh": "顯示 A2A 協議追蹤"},
+    # 修復漏洞 3: 移除 show_trace 標籤，因為功能已禁用
     "try_prompt": {"en": "Try: 'Can I check out at 2pm?'", "zh": "試試看：「我可以下午 2 點退房嗎？」"},
     "chat_input": {"en": "Ask about checkout, amenities...", "zh": "詢問退房、設施等問題..."},
     "consulting": {"en": "Consulting Hotel Ops...", "zh": "正在查詢酒店服務..."},
@@ -59,16 +62,14 @@ with st.sidebar:
     st.session_state.member_id = st.selectbox(
         get_label("member_id"), ["GOLD_001", "SILVER_002", "NEW_GUEST"], index=0
     )
-    show_trace = st.checkbox(get_label("show_trace"), value=False)
+    # 修復漏洞 3: 移除 show_trace 選項，因為後端已不再支持
     st.markdown("---")
     st.caption(get_label("try_prompt"))
 
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.markdown(msg["content"])
-        if "trace" in msg and show_trace:
-            with st.expander("A2A Trace"):
-                st.json(msg["trace"])
+        # 修復漏洞 3: 移除 trace 顯示功能
 
 if prompt := st.chat_input(get_label("chat_input")):
     st.session_state.messages.append({"role": "user", "content": prompt})
@@ -78,15 +79,14 @@ if prompt := st.chat_input(get_label("chat_input")):
         try:
             resp = requests.post(
                 f"{BACKEND_URL}/chat",
-                json={"user_message": prompt, "member_id": st.session_state.member_id, "show_trace": show_trace},
+                json={"user_message": prompt, "member_id": st.session_state.member_id},
                 timeout=10
             )
             resp.raise_for_status()
             data = resp.json()
             st.markdown(data["response"])
             msg = {"role": "assistant", "content": data["response"]}
-            if data.get("trace"):
-                msg["trace"] = data["trace"]
+            # 修復漏洞 3: 不再處理 trace 數據
             st.session_state.messages.append(msg)
         except Exception as e:
             err = f"{get_label('error_msg')}{str(e)}\n\n{get_label('check_backend')}"

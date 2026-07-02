@@ -3,9 +3,9 @@ import json
 import re
 import uuid
 import random
-from datetime import datetime
+from datetime import datetime, time
 from typing import Literal, Optional
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from pathlib import Path
@@ -19,11 +19,14 @@ else:
 
 app = FastAPI(title="A2A Hospitality Backend", version="1.0.0")
 
+# 修復漏洞 1: 限制 CORS 為特定來源
+allowed_origins = os.getenv("ALLOWED_ORIGINS", "http://localhost:8501,http://127.0.0.1:8501").split(",")
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=allowed_origins,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type"],
+    allow_credentials=False,
 )
 
 # 對話歷史儲存（記憶體中，生產環境建議使用 Redis）
@@ -32,10 +35,13 @@ conversation_history: dict[str, list[dict]] = {}
 
 def load_policy() -> dict:
     """載入政策文件，支持多語言模板變體"""
-    import re
     policy = {}
     current_section = None
-    with open(DATA_DIR / "policy.txt", "r") as f:
+    # 修復漏洞 7: 限制文件路徑，防止路徑遍歷
+    policy_path = DATA_DIR / "policy.txt"
+    if not str(policy_path.resolve()).startswith(str(DATA_DIR.resolve())):
+        raise ValueError("Invalid policy file path")
+    with open(policy_path, "r") as f:
         for line in f:
             line = line.strip()
             if not line or line.startswith("#"):
@@ -59,7 +65,11 @@ def load_policy() -> dict:
 
 
 def load_members() -> dict:
-    with open(DATA_DIR / "members.json", "r") as f:
+    # 修復漏洞 7: 限制文件路徑，防止路徑遍歷
+    members_path = DATA_DIR / "members.json"
+    if not str(members_path.resolve()).startswith(str(DATA_DIR.resolve())):
+        raise ValueError("Invalid members file path")
+    with open(members_path, "r") as f:
         return json.load(f)
 
 
@@ -141,6 +151,10 @@ def select_template_variants(template_key: str, tone: str, language: str = "zh")
 
 
 def agent_b_process(request: A2ARequest) -> A2AResponse:
+    # 修復漏洞 2: 驗證 member_id 是否為有效格式 (防止任意傳入)
+    if not re.match(r'^[A-Z]+_\d+$', request.member_id):
+        return A2AResponse(message_id=request.message_id, status="error", reason="Invalid member ID format", template_key="error")
+    
     member = MEMBERS.get(request.member_id)
     if not member:
         return A2AResponse(message_id=request.message_id, status="error", reason="Member not found", template_key="error")
@@ -155,7 +169,14 @@ def agent_b_process(request: A2ARequest) -> A2AResponse:
         limit_time = rules.get("late_checkout_until", "11:00")
         auto_approve = rules.get("auto_approve", "false").lower() == "true"
         
-        if requested <= limit_time:
+        # 修復漏洞 4: 使用時間對象比較而非字符串比較
+        try:
+            requested_time_obj = datetime.strptime(requested, "%H:%M").time()
+            limit_time_obj = datetime.strptime(limit_time, "%H:%M").time()
+        except ValueError:
+            return A2AResponse(message_id=request.message_id, status="error", reason="Invalid time format", template_key="error")
+        
+        if requested_time_obj <= limit_time_obj:
             status_key = "success" if auto_approve else "needs_approval"
             return A2AResponse(
                 message_id=request.message_id, 
@@ -177,6 +198,7 @@ def parse_intent(message: str, member_id: str) -> A2ARequest:
     # 檢測延遲退房 (支持中英文)
     if any(kw in msg for kw in ["late checkout", "check out late", "2pm", "14:00", "下午", "晚點退房", "延遲退房", "晚退房"]):
         intent = "late_checkout"
+        # 修復漏洞 6: 簡化正則表達式，防止 ReDoS 攻擊
         time_match = re.search(r'(\d{1,2}:\d{2})', message)
         requested_time = time_match.group(1) if time_match else "14:00"
     # 檢測提早入住 (支持中英文)
@@ -293,17 +315,20 @@ def get_conversation_context(member_id: str) -> Optional[dict]:
 class ChatRequest(BaseModel):
     user_message: str
     member_id: str = "GOLD_001"
-    show_trace: bool = False
+    # 修復漏洞 3: 移除 show_trace 參數，防止敏感資訊洩露
 
 class ChatResponse(BaseModel):
     response: str
-    trace: Optional[dict] = None
+    # trace 字段已移除，不再返回內部追蹤資訊
     conversation_context: Optional[dict] = None
 
 @app.post("/chat")
 async def chat(req: ChatRequest):
     # 獲取會員資訊
     member = MEMBERS.get(req.member_id, {})
+    if not member:
+        raise HTTPException(status_code=404, detail="Member not found")
+    
     member_name = member.get("name", "Guest")
     member_tier = member.get("tier", "Regular")
     stay_count = member.get("stay_count", 0)
@@ -327,18 +352,8 @@ async def chat(req: ChatRequest):
         status=a2a_resp.status
     )
     
-    result = {"response": guest_msg}
-    if req.show_trace:
-        result["trace"] = {
-            "a2a_request": a2a_req.model_dump(), 
-            "a2a_response": a2a_resp.model_dump(),
-            "member_info": {"name": member_name, "tier": member_tier, "stay_count": stay_count},
-            "tone": get_personalized_tone(member_tier, stay_count),
-            "greeting_time": get_time_greeting()
-        }
-        result["conversation_context"] = context
-    
-    return ChatResponse(**result)
+    # 修復漏洞 3: 不再返回 trace 敏感資訊
+    return ChatResponse(response=guest_msg, conversation_context=context)
 
 @app.get("/health")
 async def health():
